@@ -71,6 +71,7 @@ class ReportParser
           t = Time.parse($2.to_s)
           handle_start_test_suite(t)
           @last_description = nil
+          @std_out = nil
 
         when /Test Suite '(\S+)'.*finished at\s+(.*)./
           t = Time.parse($2.to_s)
@@ -87,23 +88,30 @@ class ReportParser
         when /Test Case '-\[\S+\s+(\S+)\]' started./
           test_case = $1
           @last_description = nil
+          @std_out = Array.new
+          @std_out.push(piped_row)
 
         when /Test Case '-\[\S+\s+(\S+)\]' passed \((.*) seconds\)/
           test_case = get_test_case_name($1, @last_description)
           test_case_duration = $2.to_f
-          handle_test_passed(test_case,test_case_duration)
+          @std_out.push(piped_row)
+          handle_test_passed(test_case,test_case_duration, @std_out)
+          @std_out = nil
 
         when /(.*): error: -\[(\S+) (\S+)\] : (.*)/
           error_location = $1
           test_suite = $2
           error_message = $4
 	        test_case = get_test_case_name($3, description)
-	        handle_test_error(test_suite,test_case,error_message,error_location)
+          @std_out.push(piped_row)
+	        handle_test_error(test_suite,test_case,error_message,error_location, @std_out)
 	        
         when /Test Case '-\[\S+ (\S+)\]' failed \((\S+) seconds\)/
           test_case = get_test_case_name($1, @last_description)
           test_case_duration = $2.to_f
-          handle_test_failed(test_case,test_case_duration)
+          @std_out.push(piped_row)
+          handle_test_failed(test_case,test_case_duration, @std_out)
+            @std_out = nil
 	        
         when /failed with exit code (\d+)/
           @exit_code = $1.to_i
@@ -111,6 +119,11 @@ class ReportParser
         when
           /BUILD FAILED/
           @exit_code = -1;
+
+        else
+          unless @std_out.nil?
+            @std_out.push(piped_row)
+          end
       end
       
       if description
@@ -126,6 +139,7 @@ class ReportParser
     @errors = Hash.new  # test_case -> error_msg
     @ended_current_test_suite = false
     @cur_start_time = start_time
+    @std_outs = Hash.new # test_case -> std_out
   end
 
   def handle_end_test_suite(test_name,end_time)
@@ -152,6 +166,11 @@ class ReportParser
           message = string_to_xml @errors[test_case][0].to_s
           location = string_to_xml @errors[test_case][1].to_s
           current_file << ">\n"
+          if @std_outs[test_case]
+            current_file << "<system-out><![CDATA["
+            current_file << @std_outs[test_case].join()
+            current_file << "]]></system-out>\n"
+          end
           current_file << "<failure message='#{message}' type='Failure'>#{location}</failure>\n"
           current_file << "</testcase>\n"
         else
@@ -168,21 +187,24 @@ class ReportParser
     s.gsub(/&/, '&amp;').gsub(/'/, '&quot;').gsub(/</, '&lt;')
   end
   
-  def handle_test_passed(test_case,test_case_duration)
+  def handle_test_passed(test_case,test_case_duration, std_out)
     @total_passed_test_cases += 1
     @tests_results[test_case] = test_case_duration
+    @std_outs[test_case] = std_out
   end
 
-  def handle_test_error(test_suite,test_case,error_message,error_location)
+  def handle_test_error(test_suite,test_case,error_message,error_location, std_out)
     # Only record the first error for a test_case
     if @errors[test_case].nil?
       @errors[test_case] = [ error_message, error_location ]
+      @std_outs[test_case] = std_out
     end
   end
 
-  def handle_test_failed(test_case,test_case_duration) 
+  def handle_test_failed(test_case,test_case_duration, std_out) 
     @total_failed_test_cases +=1
     @tests_results[test_case] = test_case_duration
+    @std_outs[test_case] = std_out
   end
 
   def get_test_case_name(test_case, description)
