@@ -29,13 +29,15 @@ SUPPORT_KIWI = ENV.has_key?('SUPPORT_KIWI') ? ENV['SUPPORT_KIWI'] : true
 require 'time'
 require 'fileutils'
 require 'socket'
+require 'optparse'
 
 class ReportParser
 
   attr_reader :exit_code
   
-  def initialize(piped_input)
+  def initialize(piped_input, verbose)
     @piped_input = piped_input
+    @verbose = verbose
     @exit_code = 0
     
     FileUtils.rm_rf(TEST_REPORTS_FOLDER)
@@ -58,7 +60,7 @@ class ReportParser
         piped_row.encode!(temporary_encoding, 'UTF-8', :invalid => :replace, :replace => '')
         piped_row.encode!('UTF-8', temporary_encoding)
       end
-      puts piped_row
+      log(piped_row)
       
       description_results = piped_row.scan(/\s\'(.+)\'\s/)
       if description_results && description_results[0] && description_results[0]
@@ -158,10 +160,10 @@ class ReportParser
         current_file << "<testcase classname='#{test_name}' name='#{test_case}' time='#{duration.to_s}'"
         unless @errors[test_case].nil?
           # uh oh we got a failure
-          puts "tests_errors[0]"
-          puts @errors[test_case][0]
-          puts "tests_errors[1]"
-          puts @errors[test_case][1]
+          log("tests_errors[0]")
+          log(@errors[test_case][0])
+          log("tests_errors[1]")
+          log(@errors[test_case][1])
           
           message = string_to_xml @errors[test_case][0].to_s
           location = string_to_xml @errors[test_case][1].to_s
@@ -224,13 +226,25 @@ class ReportParser
       test_case
     end
   end
- 
+
+  def log(message)
+    if @verbose
+      puts message
+    end
+  end
+
 end
 
 #Main
+options = {}
+OptionParser.new do |opt|
+  opt.on('-v', '--verbose', 'Output file contents') {|v| options[:verbose] = v}
+  opt.parse!(ARGV)
+end
+
 #piped_input = File.open("tests_fail.txt") # for debugging this script
 piped_input = ARGF.readlines
 
-report = ReportParser.new(piped_input)
+report = ReportParser.new(piped_input, options[:verbose])
 
 exit report.exit_code
