@@ -157,7 +157,7 @@ class ReportParser
       @tests_results.each do |t|
         test_case = string_to_xml t[0]
         duration = @tests_results[test_case]
-        current_file << "<testcase classname='#{test_name}' name='#{test_case}' time='#{duration.to_s}'"
+        current_file << "<testcase classname='#{test_name}' name='#{test_case}' time='#{duration.to_s}'>\n"
         unless @errors[test_case].nil?
           # uh oh we got a failure
           log("tests_errors[0]")
@@ -167,17 +167,14 @@ class ReportParser
           
           message = string_to_xml @errors[test_case][0].to_s
           location = string_to_xml @errors[test_case][1].to_s
-          current_file << ">\n"
-          if @std_outs[test_case]
-            current_file << "<system-out><![CDATA["
-            current_file << @std_outs[test_case].join()
-            current_file << "]]></system-out>\n"
-          end
           current_file << "<failure message='#{message}' type='Failure'>#{location}</failure>\n"
-          current_file << "</testcase>\n"
-        else
-          current_file << " />\n"
         end
+        if @std_outs[test_case]
+          current_file << "<system-out><![CDATA["
+          current_file << @std_outs[test_case].join()
+          current_file << "]]></system-out>\n"
+        end
+        current_file << "</testcase>\n"
       end
       current_file << "</testsuite>\n"
       current_file.close
